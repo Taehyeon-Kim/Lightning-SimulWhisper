@@ -3,7 +3,7 @@ import argparse
 
 import sys
 import logging
-import torch
+import mlx.core as mx
 
 from simul_whisper.config import AlignAttConfig
 from simul_whisper.simul_whisper import PaddedAlignAttWhisper
@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 
 def simulwhisper_args(parser):
     group = parser.add_argument_group('Whisper arguments')
-    group.add_argument('--model_path', type=str, default='./large-v3.pt', 
+    group.add_argument('--model_path', type=str, default='./base.pt', 
                         help='The file path to the Whisper .pt model. If not present on the filesystem, the model is downloaded automatically.')
+    group.add_argument('--model_name', type=str, default='small', 
+                        help='Model name for alignment heads selection (tiny, base, small, medium, large, large-v1, large-v2, large-v3, etc.)')
     group.add_argument("--beams","-b", type=int, default=1, help="Number of beams for beam search decoding. If 1, GreedyDecoder is used.")
     group.add_argument("--decoder",type=str, default=None, help="Override automatic selection of beam or greedy decoder. "
                         "If beams > 1 and greedy: invalid.")
@@ -48,6 +50,10 @@ def simulwhisper_args(parser):
     group.add_argument("--static_init_prompt",type=str, default=None, help="Do not scroll over this text. It can contain terminology that should be relevant over all document.")
     group.add_argument("--max_context_tokens",type=int, default=None, help="Max context tokens for the model. Default is 0.")
 
+    group = parser.add_argument_group("VAD configuration")
+    group.add_argument('--vad_silence_ms', type=int, default=500, 
+                        help='Minimum silence duration in milliseconds before VAD detects end of speech (default: 500ms)')
+
 
 def simul_asr_factory(args):
     logger.setLevel(args.log_level)
@@ -60,14 +66,13 @@ def simul_asr_factory(args):
         else:
             raise ValueError("Invalid decoder type. Use 'beam' or 'greedy'.")
     else:
-        if decoder is None:
-            decoder = "greedy"
-        elif decoder not in ("beam","greedy"):
-            raise ValueError("Invalid decoder type. Use 'beam' or 'greedy'.")
-        # else: it is greedy or beam, that's ok 
+        # When beam_size=1, always use greedy decoder for efficiency
+        if decoder == "beam":
+            logger.warning("BeamSearchDecoder with beam_size=1 is inefficient. Forcing GreedyDecoder instead.")
+        decoder = "greedy" 
     
-    a = { v:getattr(args, v) for v in ["model_path", "cif_ckpt_path", "frame_threshold", "audio_min_len", "audio_max_len", "beams", "task",
-                                       "never_fire", 'init_prompt', 'static_init_prompt', 'max_context_tokens', "logdir"
+    a = { v:getattr(args, v) for v in ["model_path", "model_name", "cif_ckpt_path", "frame_threshold", "audio_min_len", "audio_max_len", "beams", "task",
+                                       "never_fire", 'init_prompt', 'static_init_prompt', 'max_context_tokens', "logdir", "vad_silence_ms"
                                        ]}
     a["language"] = args.lan
     a["segment_length"] = args.min_chunk_size
@@ -85,10 +90,11 @@ class SimulWhisperASR(ASRBase):
     
     sep = " "
 
-    def __init__(self, language, model_path, cif_ckpt_path, frame_threshold, audio_max_len, audio_min_len, segment_length, beams, task, 
-                 decoder_type, never_fire, init_prompt, static_init_prompt, max_context_tokens, logdir):
+    def __init__(self, language, model_path, model_name, cif_ckpt_path, frame_threshold, audio_max_len, audio_min_len, segment_length, beams, task, 
+                 decoder_type, never_fire, init_prompt, static_init_prompt, max_context_tokens, logdir, vad_silence_ms):
         cfg = AlignAttConfig(
             model_path=model_path, 
+            model_name=model_name,
             segment_length=segment_length,
             frame_threshold=frame_threshold,
             language=language,
@@ -103,6 +109,7 @@ class SimulWhisperASR(ASRBase):
             max_context_tokens=max_context_tokens,
             static_init_prompt=static_init_prompt,
             logdir=logdir,
+            vad_silence_ms=vad_silence_ms,
         )
         logger.info(f"Language: {language}")
         self.model = PaddedAlignAttWhisper(cfg)
@@ -113,7 +120,7 @@ class SimulWhisperASR(ASRBase):
         raise NotImplementedError("Use SimulWhisperOnline.process_iter() instead of transcribe().")
 
     def warmup(self, audio, init_prompt=""):
-        self.model.insert_audio(audio)
+        self.model.insert_audio(mx.array(audio))
         self.model.infer(True)
         self.model.refresh_segment(complete=True)
     
@@ -149,17 +156,16 @@ class SimulWhisperOnline(OnlineProcessorInterface):
         self.unicode_buffer = []  # hide incomplete unicode character for the next iteration
 
     def insert_audio_chunk(self, audio):
-        self.audio_chunks.append(torch.from_numpy(audio))
+        self.audio_chunks.append(mx.array(audio))
 
     def timestamped_text(self, tokens, generation):
         if not generation:
             return []
 
         pr = generation["progress"]
-        if "result" not in generation or self.unicode_buffer != []:
-            split_words, split_tokens = self.model.tokenizer.split_to_word_tokens(tokens)
-        else:
-            split_words, split_tokens = generation["result"]["split_words"], generation["result"]["split_tokens"]
+        # The 'result' in generation can be stale if tokens were modified by hide_incomplete_unicode,
+        # causing a mismatch. Always re-splitting tokens ensures consistency.
+        split_words, split_tokens = self.model.tokenizer.split_to_word_tokens(tokens)
 
         frames = [p["most_attended_frames"][0] for p in pr]
         if frames and self.unicode_buffer != []:
@@ -200,18 +206,39 @@ class SimulWhisperOnline(OnlineProcessorInterface):
         return tokens
 
     def process_iter(self):
+        import time
+        import logging
+        
+        # Enable forced evaluation for accurate timing when in DEBUG mode
+        FORCE_EVAL = logger.isEnabledFor(logging.DEBUG)
+        
+        t_start = time.time()
+        logger.debug(f"[PERF] SimulWhisperOnline.process_iter() started")
+        
+        t_audio = time.time()
         if len(self.audio_chunks) == 0:
             audio = None
         else:
-            audio = torch.cat(self.audio_chunks, dim=0)
+            audio = mx.concatenate(self.audio_chunks, axis=0)
             if audio.shape[0] == 0:
                 audio = None
             else:
                 self.end += audio.shape[0] / self.SAMPLING_RATE
         self.audio_chunks = []
+        if FORCE_EVAL and audio is not None:
+            mx.eval(audio)
+        logger.debug(f"[PERF]   audio chunk processing: {time.time()-t_audio:.4f}s")
+        
+        t_insert = time.time()
         self.audio_bufer_offset += self.model.insert_audio(audio)
+        if FORCE_EVAL:
+            # insert_audio doesn't return mx arrays, just offset
+            pass
+        logger.debug(f"[PERF]   insert_audio: {time.time()-t_insert:.4f}s")
+        
         tokens, generation_progress = self.model.infer(is_last=self.is_last)
 
+        t_post = time.time()
         tokens = self.hide_incomplete_unicode(tokens)
 
         # word-level timestamps
@@ -220,6 +247,8 @@ class SimulWhisperOnline(OnlineProcessorInterface):
         text = self.model.tokenizer.decode(tokens)
 
         if len(text) == 0:
+            logger.debug(f"[PERF]   post-processing: {time.time()-t_post:.4f}s")
+            logger.debug(f"[PERF] SimulWhisperOnline.process_iter() total: {time.time()-t_start:.4f}s")
             return (None,None,"")
         self.beg = ts_words[0][0]+self.audio_bufer_offset  # it should be this
         self.beg = max(self.beg, self.last_ts[0]+1)  # but let's create the timestamps non-decreasing -- at least last beg + 1 
@@ -231,6 +260,8 @@ class SimulWhisperOnline(OnlineProcessorInterface):
 
         self.last_ts = (self.beg, e)
         
+        logger.debug(f"[PERF]   post-processing: {time.time()-t_post:.4f}s")
+        logger.debug(f"[PERF] SimulWhisperOnline.process_iter() total: {time.time()-t_start:.4f}s")
         return (self.beg,e,text)
 
     def finish(self):
@@ -243,6 +274,23 @@ class SimulWhisperOnline(OnlineProcessorInterface):
     
 
 if __name__ == "__main__":
-
+    import os
     from whisper_streaming.whisper_online_main import main_simulation_from_file
-    main_simulation_from_file(simul_asr_factory, add_args=simulwhisper_args)
+    
+    # Start MLX memory logging if requested
+    memory_logger = None
+    if os.environ.get('MLX_MEMORY_LOG'):
+        try:
+            from mlx_memory_monitor import MemoryLogger
+            log_file = os.environ.get('MLX_MEMORY_LOG')
+            memory_logger = MemoryLogger(log_file, interval=0.1, console_output=False)
+            memory_logger.start()
+            print(f"MLX memory logging enabled: {log_file}")
+        except ImportError:
+            print("Warning: mlx_memory_monitor not found, memory logging disabled")
+    
+    try:
+        main_simulation_from_file(simul_asr_factory, add_args=simulwhisper_args)
+    finally:
+        if memory_logger:
+            memory_logger.stop()

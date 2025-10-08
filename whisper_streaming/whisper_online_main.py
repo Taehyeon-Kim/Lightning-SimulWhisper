@@ -68,7 +68,8 @@ def asr_factory(args, factory=None):
     # Create the OnlineASRProcessor
     if args.vac:
         from whisper_streaming.vac_online_processor import VACOnlineASRProcessor
-        online = VACOnlineASRProcessor(args.min_chunk_size, online)
+        vad_silence_ms = getattr(args, 'vad_silence_ms', 500)  # Default to 500ms if not provided
+        online = VACOnlineASRProcessor(args.min_chunk_size, online, vad_silence_ms)
 
     if args.task == "translate":
         if args.model_path.endswith(".en.pt"):
@@ -180,7 +181,7 @@ def main_simulation_from_file(factory, add_args=None):
             else:
                 output_transcript(o, now=end)
 
-            logger.info(f"## last processed {end:.2f}s")
+            # logger.info(f"## last processed {end:.2f}s")
 
             if end >= duration:
                 break
@@ -212,7 +213,7 @@ def main_simulation_from_file(factory, add_args=None):
             else:
                 output_transcript(o)
             now = time.time() - start
-            logger.info(f"## last processed {end:.2f} s, now is {now:.2f}, the latency is {now-end:.2f}")
+            # logger.info(f"## last processed {end:.2f} s, now is {now:.2f}, the latency is {now-end:.2f}")
 
             if end >= duration:
                 break

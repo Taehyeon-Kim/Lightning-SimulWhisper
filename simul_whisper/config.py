@@ -7,6 +7,7 @@ from typing import Literal
 class SimulWhisperConfig:
     '''Options that are common for all simul policies that could be implemented in SimulWhisper.'''
     model_path: str
+    model_name: str = field(default="small")
     language: str = field(default="zh")
     nonspeech_prob: float = 1.0
     audio_min_len: float = 1.0
@@ -29,3 +30,4 @@ class AlignAttConfig(SimulWhisperConfig):
     audio_max_len: float = 30.0
     cif_ckpt_path: str = ""
     never_fire: bool = False
+    vad_silence_ms: int = 500

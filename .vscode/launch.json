@@ -1,0 +1,29 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python Debug: SimulStreamingWhisper",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/simulstreaming_whisper.py",
+      "args": [
+        "test.mp3",
+        "--language",
+        "ko",
+        "--vac",
+        "--beams",
+        "3",
+        "-l",
+        "DEBUG",
+        "--model_path",
+        "mlx_model",
+        "--cif_ckpt_path",
+        "cif_model/small.pt"
+      ],
+      "console": "integratedTerminal"
+    }
+  ]
+}

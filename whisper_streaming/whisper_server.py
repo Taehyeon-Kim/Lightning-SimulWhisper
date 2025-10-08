@@ -104,7 +104,7 @@ class ServerProcessor:
             print("%1.0f %1.0f %s" % (beg,end,o[2]),flush=True,file=sys.stderr)
             return "%1.0f %1.0f %s" % (beg,end,o[2])
         else:
-            logger.debug("No text in this segment")
+            # logger.debug("No text in this segment")
             return None
 
     def send_result(self, o):
@@ -114,18 +114,40 @@ class ServerProcessor:
 
     def process(self):
         # handle one client connection
+        import time
+        import logging
+        
+        # Enable forced evaluation for accurate timing when in DEBUG mode
+        FORCE_EVAL = logger.isEnabledFor(logging.DEBUG)
+        
         self.online_asr_proc.init()
+        iteration = 0
         while True:
+            iteration += 1
+            t_iter = time.time()
+            logger.debug(f"\n[PERF] ========== Iteration {iteration} ==========")
+            
+            t_receive = time.time()
             a = self.receive_audio_chunk()
             if a is None:
                 break
+            logger.debug(f"[PERF] Received audio chunk: {time.time()-t_receive:.4f}s (audio len: {len(a)/SAMPLING_RATE:.3f}s)")
+            
+            t_insert = time.time()
             self.online_asr_proc.insert_audio_chunk(a)
+            logger.debug(f"[PERF] Insert audio chunk: {time.time()-t_insert:.4f}s")
+            
+            t_process = time.time()
             o = self.online_asr_proc.process_iter()
+            logger.debug(f"[PERF] Process iter: {time.time()-t_process:.4f}s")
+            
             try:
                 self.send_result(o)
             except BrokenPipeError:
                 logger.info("broken pipe -- connection closed?")
                 break
+            
+            logger.debug(f"[PERF] Total iteration time: {time.time()-t_iter:.4f}s")
 
 #        o = online.finish()  # this should be working
 #        self.send_result(o)

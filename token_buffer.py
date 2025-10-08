@@ -1,12 +1,11 @@
-import torch
+import mlx.core as mx
 import sys
 class TokenBuffer:
 
-    def __init__(self, text="", tokenizer=None, device=None, prefix_token_ids=[]):
+    def __init__(self, text="", tokenizer=None, prefix_token_ids=[]):
         self.text = text
         self.prefix_token_ids = prefix_token_ids
         self.tokenizer = tokenizer
-        self.device = device
 
     def as_token_ids(self, tokenizer=None):
 
@@ -14,20 +13,15 @@ class TokenBuffer:
             tokenizer = self.tokenizer
         if tokenizer is None:
             raise ValueError("Tokenizer is not set.") 
-        return self.prefix_token_ids + tokenizer.encode(self.text)
+        return self.prefix_token_ids + self.tokenizer.encode(self.text)
 
-    def as_tensor(self, device=None):
-        if device is None:
-            device = self.device
-        if device is None:
-            raise ValueError("Device is not set.")
+    def as_tensor(self):
         tok_ids = self.as_token_ids()
-        return torch.tensor(tok_ids, 
-                     dtype=torch.long, device=device).unsqueeze(0)
+        return mx.array(tok_ids, dtype=mx.int64)[None, :]
 
-    def as_tensor_beam(self, beam, device=None):
-        t = self.as_tensor(device=device)
-        return t.repeat_interleave(beam, dim=0)
+    def as_tensor_beam(self, beam):
+        t = self.as_tensor()
+        return mx.repeat(t, repeats=beam, axis=0)
 
 
     def as_text(self):

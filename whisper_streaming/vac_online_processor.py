@@ -1,31 +1,27 @@
 from whisper_streaming.base import OnlineProcessorInterface
 from whisper_streaming.silero_vad_iterator import FixedVADIterator
 import numpy as np
-
 import logging
+
 logger = logging.getLogger(__name__)
-import sys
+
 
 class VACOnlineASRProcessor(OnlineProcessorInterface):
     '''Wraps OnlineASRProcessor with VAC (Voice Activity Controller). 
 
     It works the same way as OnlineASRProcessor: it receives chunks of audio (e.g. 0.04 seconds), 
     it runs VAD and continuously detects whether there is speech or not. 
-    When it detects end of speech (non-voice for 500ms), it makes OnlineASRProcessor to end the utterance immediately.
+    When it detects end of speech (non-voice for configurable duration), it makes OnlineASRProcessor to end the utterance immediately.
     '''
 
-    def __init__(self, online_chunk_size, online):
+    def __init__(self, online_chunk_size, online, vad_silence_ms=500):
         self.online_chunk_size = online_chunk_size
 
         self.online = online
 
         # VAC:
-        import torch
-        model, _ = torch.hub.load(
-            repo_or_dir='snakers4/silero-vad',
-            model='silero_vad'
-        )
-        self.vac = FixedVADIterator(model)  # we use the default options there: 500ms silence, 100ms padding, etc.  
+        vad_model_path = "silero_model/silero_vad.onnx"
+        self.vac = FixedVADIterator(vad_model_path, min_silence_duration_ms=vad_silence_ms)  # configurable silence duration
 
         self.init()
 
@@ -46,7 +42,10 @@ class VACOnlineASRProcessor(OnlineProcessorInterface):
 
 
     def insert_audio_chunk(self, audio):
+        import time
+        t_start = time.time()
         res = self.vac(audio)
+        logger.debug(f"[PERF] VAC processing: {time.time()-t_start:.4f}s (audio len: {len(audio)/self.SAMPLING_RATE:.3f}s)")
         self.audio_buffer = np.append(self.audio_buffer, audio)
         if res is not None:
             frame = list(res.values())[0]
@@ -88,14 +87,24 @@ class VACOnlineASRProcessor(OnlineProcessorInterface):
 
 
     def process_iter(self):
+        import time
+        import logging
+        
+        # Enable forced evaluation for accurate timing when in DEBUG mode
+        FORCE_EVAL = logger.isEnabledFor(logging.DEBUG)
+        
+        t_start = time.time()
         if self.is_currently_final:
-            return self.finish()
+            ret = self.finish()
+            logger.debug(f"[PERF] VACOnlineASRProcessor.process_iter() (final): {time.time()-t_start:.4f}s")
+            return ret
         elif self.current_online_chunk_buffer_size > self.SAMPLING_RATE*self.online_chunk_size:
             self.current_online_chunk_buffer_size = 0
             ret = self.online.process_iter()
+            logger.debug(f"[PERF] VACOnlineASRProcessor.process_iter() (process): {time.time()-t_start:.4f}s")
             return ret
         else:
-            logger.info(f"no online update, only VAD. {self.status}")
+            logger.debug(f"[PERF] VACOnlineASRProcessor.process_iter() (skip): {time.time()-t_start:.4f}s")
             return (None, None, "")
 
     def finish(self):
