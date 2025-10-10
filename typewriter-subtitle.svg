@@ -8,12 +8,12 @@
         font-weight: bold;
         color: #24292f;
         margin: 0;
-        padding: 10px;
+        padding: 0px;
         overflow: hidden;
         white-space: nowrap;
         max-width: fit-content;
         width: 0;
-        animation: typing 3s steps(62, end) forwards;
+        animation: typing 9.5s steps(62, end) infinite;
         display: inline-block;
         position: relative;
         }
@@ -31,11 +31,20 @@
         }
 
         @keyframes typing {
-        from {
+        0% {
         width: 0;
         }
-        to {
+        31.6% {
         width: 100%;
+        }
+        63.2% {
+        width: 100%;
+        }
+        94.7% {
+        width: 0;
+        }
+        100% {
+        width: 0;
         }
         }
 
@@ -74,10 +83,11 @@
         display: flex;
         justify-content: center;
         align-items: center;
+        padding: 10px;
         }
       </style>
       <div class="wrapper">
-        <div class="typewriter">Real-time, Local Speech-to-Text on Apple Silicon Devices</div>
+        <div class="typewriter">Real-time, Local Speech-to-Text on Apple Silicon Devices </div>
       </div>
     </div>
   </foreignObject>
