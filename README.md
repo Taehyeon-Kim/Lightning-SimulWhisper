@@ -1,10 +1,21 @@
-# SimulStreamingMLX
+<h1 align="center">SimulStreamingMLX</h1>
 
-⚠️ This is a very unfinished project. Please feel free to leave issues or pull requests when you find problems ⚠️
+<p align="center">
+<img src="https://github.com/altalt-org/SimulStreamingMLX/raw/main/tests/timing_visualizations/comprehensive_summary.png" alt="WhisperLiveKit Demo" width="730" style="border-radius:18px;">
+</p>
 
-SimulStreamingMLX implements Whisper model for simultaneous transcription using **MLX** (Apple's machine learning framework) and **CoreML** for optimal performance on Apple Silicon devices. It uses the AlignAtt policy for streaming speech recognition.
+<p align="center"><b>Real-time, Local Real-time Speech-to-Text on Apple Silicon Devices</b></p>
 
-**This implementation enables real-time speech-to-text (STT) on Apple Silicon devices**, achieving sub-second latency while maintaining high transcription quality through the combination of MLX's optimized decoder and CoreML's Neural Engine acceleration.
+
+<div align="center" style="background-color: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 8px; padding: 16px; margin: 20px 0; color: #b8860b;">
+  <strong>⚠️ This is an unfinished project. Please feel free to leave issues or pull requests when you find problems ⚠️</strong>
+</div>
+
+#### SimulStreamingMLX implements Whisper model for simultaneous transcription using **MLX** (Apple's machine learning framework) and **CoreML** for optimal performance on Apple Silicon devices. It uses the AlignAtt policy for streaming speech recognition.
+
+#### Using [the original SimulStreaming project](https://github.com/ufal/SimulStreaming) I could barely run the `base` model in real time. Now, I can run `medium` and even `large-v3-turbo` models in real time on my M2 Macbook Pro
+
+The MLX-only version consumes way too much powerm
 
 ## Performance Results
 
