@@ -1,7 +1,7 @@
 <h1 align="center">SimulStreamingMLX</h1>
 
 <p align="center">
-<img src="https://github.com/altalt-org/SimulStreamingMLX/raw/main/tests/timing_visualizations/comprehensive_summary.png" alt="WhisperLiveKit Demo" width="730" style="border-radius:18px;">
+<img src="performance-summary.svg" alt="WhisperLiveKit Demo" width="730" height="400">
 </p>
 
 <p align="center"><b>Real-time, Local Real-time Speech-to-Text on Apple Silicon Devices</b></p>
