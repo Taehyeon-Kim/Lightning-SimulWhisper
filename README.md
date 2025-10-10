@@ -13,21 +13,20 @@
   <img src="warning-callout.svg" width="800" height="80" alt="Project warning">
 </div>
 
-#### SimulStreamingMLX implements Whisper model for simultaneous transcription using **MLX** (Apple's machine learning framework) and **CoreML** for optimal performance on Apple Silicon devices. It uses the AlignAtt policy for streaming speech recognition.
+The fastest, most power efficient real-time local transcriptions on your apple silicone devices ✨
 
-#### Using [the original SimulStreaming project](https://github.com/ufal/SimulStreaming) I could barely run the `base` model in real time. Now, I can run `medium` and even `large-v3-turbo` models in real time on my M2 Macbook Pro
+Zero pytorch dependencies ⛔
 
-The MLX-only version consumes way too much powerm
+15x speedup on encoding, 18x speedup on decoding ⚡
+
+SimulStreamingMLX implements Whisper model for simultaneous transcription using **MLX** (Apple's machine learning framework) and **CoreML** for optimal performance on Apple Silicon devices. It uses the AlignAtt policy for streaming speech recognition.
 
 ## Performance Results
 
-![Comprehensive Performance Summary](tests/timing_visualizations/comprehensive_summary.png)
+Using [the original SimulStreaming project](https://github.com/ufal/SimulStreaming) I could barely run the `base` model in real time. Now, I can run `medium` and even `large-v3-turbo` models in real time on my M2 Macbook Pro.
 
-*Performance comparison performed on non-quantized medium model on an M2 MacBook Pro*
+The MLX-only version consumes way too much power, so using the CoreML encoder is recommended.
 
-The comprehensive summary above shows the performance characteristics of different implementations. **CoreML encoder acceleration provides significant speed improvements while maintaining similar overall inference times**, demonstrating the efficiency of Apple's Neural Engine for encoder operations.
-
-### Key Performance Insights
 
 - **CoreML Encoder**: While the encoder speedup is dramatic (up to 18x faster), the overall inference time improvement is more modest because the decoder still runs on MLX
 - **MLX Decoder**: MLX provides up to 15x decoder speedup compared to PyTorch implementations, demonstrating excellent Apple Silicon optimization
