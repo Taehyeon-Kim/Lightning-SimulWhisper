@@ -13,7 +13,7 @@
   <img src="warning-callout.svg" width="800" height="80" alt="Project warning">
 </div>
 
-The fastest, most power efficient real-time local transcriptions on your apple silicone devices ✨
+The fastest, most power efficient real-time local transcriptions on your apple silicon devices ✨
 
 Zero pytorch dependencies ⛔
 
