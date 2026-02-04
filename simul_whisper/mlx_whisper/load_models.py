@@ -47,8 +47,13 @@ def _extract_model_size(path_or_hf_repo: str, model_name: str) -> str:
     return model_name
 
 
+_NO_MLX_SUFFIX = {"large-v3-turbo", "turbo"}
+
+
 def _format_hf_repo_name(model_size: str) -> str:
     """Format model size to HuggingFace repository name."""
+    if model_size in _NO_MLX_SUFFIX:
+        return f"mlx-community/whisper-{model_size}"
     return f"mlx-community/whisper-{model_size}-mlx"
 
 

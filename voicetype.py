@@ -92,26 +92,25 @@ class STTEngine:
             cif_ckpt_path=None,
             frame_threshold=25,
             audio_max_len=30.0,
-            audio_min_len=0.0,
+            audio_min_len=0.5,
             segment_length=min_chunk_size,
             beams=1,
             task="transcribe",
             decoder_type="greedy",
-            never_fire=True,  # don't truncate last word
+            never_fire=True,
             init_prompt=None,
             static_init_prompt=None,
             max_context_tokens=None,
             logdir=None,
-            vad_silence_ms=500,
+            vad_silence_ms=800,
         )
 
         base_online = SimulWhisperOnline(self.asr)
 
-        # Wrap with VAC for automatic voice activity detection
         self.online = VACOnlineASRProcessor(
             online_chunk_size=min_chunk_size,
             online=base_online,
-            vad_silence_ms=500,
+            vad_silence_ms=800,
         )
 
         # Warmup with a short silence to speed up first real inference
@@ -508,33 +507,38 @@ class VoiceTypeApp(rumps.App):
 
     # -- recognition loop (runs in background thread) --
 
+    def _feed_and_type(self, audio_chunk):
+        text, is_final = self._engine.feed(audio_chunk)
+        if text:
+            logger.info(f'STT: "{text}" (final={is_final})')
+            if is_final:
+                self._kb.type_final(text)
+                self._segment_committed = True
+            else:
+                if self._segment_committed:
+                    self._kb.reset()
+                    self._segment_committed = False
+                self._kb.type_incremental(text)
+
     def _recognition_loop(self):
-        segment_committed = False
+        self._segment_committed = False
         while not self._stop_event.is_set():
             try:
                 audio_chunk = self._mic.queue.get(timeout=0.1)
             except queue.Empty:
                 continue
-
             try:
-                text, is_final = self._engine.feed(audio_chunk)
+                self._feed_and_type(audio_chunk)
             except Exception:
                 logger.exception("STT feed error")
-                continue
 
-            if text:
-                logger.info(f'STT: "{text}" (final={is_final})')
-                try:
-                    if is_final:
-                        self._kb.type_final(text)
-                        segment_committed = True
-                    else:
-                        if segment_committed:
-                            self._kb.reset()
-                            segment_committed = False
-                        self._kb.type_incremental(text)
-                except Exception:
-                    logger.exception("Keyboard inject error")
+        # Drain any remaining audio chunks after stop signal
+        while not self._mic.queue.empty():
+            try:
+                audio_chunk = self._mic.queue.get_nowait()
+                self._feed_and_type(audio_chunk)
+            except (queue.Empty, Exception):
+                break
 
     # -- cleanup --
 
