@@ -12,28 +12,23 @@ Usage:
 Toggle: Press Fn key to start/stop voice recognition.
 """
 
-import sys
-import os
-import time
+import contextlib
+import json
+import logging
+import pathlib
 import queue
 import threading
-import logging
-import signal
-from argparse import Namespace
+import time
 
 import numpy as np
 import pyaudio
 import rumps
-
 from pynput import keyboard as pynput_keyboard
-
 from Quartz import (
     CGEventCreateKeyboardEvent,
     CGEventKeyboardSetUnicodeString,
     CGEventPost,
     kCGHIDEventTap,
-    kCGEventKeyDown,
-    kCGEventKeyUp,
 )
 
 # -- Project imports (Lightning-SimulWhisper engine) --
@@ -43,15 +38,49 @@ from whisper_streaming.vac_online_processor import VACOnlineASRProcessor
 logger = logging.getLogger("voicetype")
 
 # ---------------------------------------------------------------------------
-# STT Engine – thin wrapper around SimulWhisper
+# Config persistence
 # ---------------------------------------------------------------------------
+
+CONFIG_PATH = pathlib.Path.home() / ".config" / "voicetype" / "config.json"
+
+AVAILABLE_MODELS = ["large-v3-turbo", "large-v3", "medium", "small", "base", "tiny"]
+AVAILABLE_LANGUAGES = [
+    ("Korean", "ko"),
+    ("English", "en"),
+    ("Japanese", "ja"),
+    ("Chinese", "zh"),
+    ("Auto-detect", "auto"),
+]
+_LANG_CODE_TO_NAME = {code: name for name, code in AVAILABLE_LANGUAGES}
+
+_DEFAULT_CONFIG = {"model_name": "large-v3-turbo", "language": "ko"}
+
+
+def _load_config() -> dict:
+    """Load config from disk, returning defaults on any failure."""
+    try:
+        return {**_DEFAULT_CONFIG, **json.loads(CONFIG_PATH.read_text())}
+    except Exception:
+        return dict(_DEFAULT_CONFIG)
+
+
+def _save_config(cfg: dict) -> None:
+    """Persist config to disk."""
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# STT Engine - thin wrapper around SimulWhisper
+# ---------------------------------------------------------------------------
+
 
 class STTEngine:
     """Wraps SimulWhisperASR + VACOnlineASRProcessor."""
 
     SAMPLING_RATE = 16000
 
-    def __init__(self, model_name="small", language="ko", min_chunk_size=1.0):
+    def __init__(self, model_name="large-v3-turbo", language="ko", min_chunk_size=1.0):
         logger.info(f"Loading model '{model_name}' for language '{language}' ...")
 
         # model_path=model_name triggers auto-download from HuggingFace
@@ -68,7 +97,7 @@ class STTEngine:
             beams=1,
             task="transcribe",
             decoder_type="greedy",
-            never_fire=True,       # don't truncate last word
+            never_fire=True,  # don't truncate last word
             init_prompt=None,
             static_init_prompt=None,
             max_context_tokens=None,
@@ -117,6 +146,7 @@ class STTEngine:
 # Microphone Capture
 # ---------------------------------------------------------------------------
 
+
 class MicCapture:
     """PyAudio microphone capture with callback → queue."""
 
@@ -164,8 +194,9 @@ class MicCapture:
 
 
 # ---------------------------------------------------------------------------
-# Keyboard Injector – CGEvent unicode typing
+# Keyboard Injector - CGEvent unicode typing
 # ---------------------------------------------------------------------------
+
 
 class KeyboardInjector:
     """Types text into the active input field via CGEvent keyboard simulation."""
@@ -256,13 +287,14 @@ class KeyboardInjector:
 # VoiceType menubar app
 # ---------------------------------------------------------------------------
 
+
 class VoiceTypeApp(rumps.App):
     """macOS menubar app for real-time STT → keyboard injection."""
 
     TITLE_IDLE = "[STT Off]"
     TITLE_LISTENING = "[STT On]"
 
-    def __init__(self, model_name="small", language="ko"):
+    def __init__(self, model_name="large-v3-turbo", language="ko"):
         super().__init__(self.TITLE_IDLE, quit_button="Quit")
 
         self._model_name = model_name
@@ -275,16 +307,79 @@ class VoiceTypeApp(rumps.App):
         self._recording = False
         self._rec_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._toggle_lock = threading.Lock()
 
         # Menu items
         self.toggle_item = rumps.MenuItem("Start (⌥)", callback=self._toggle)
+        self._model_menu = self._build_model_menu()
+        self._language_menu = self._build_language_menu()
         self.status_item = rumps.MenuItem("Status: idle")
         self.status_item.set_callback(None)
-        self.menu = [self.toggle_item, self.status_item]
+        self.menu = [
+            self.toggle_item,
+            None,
+            self._model_menu,
+            self._language_menu,
+            None,
+            self.status_item,
+        ]
 
         # Global hotkey listener (Option key alone)
         self._hotkey_listener = None
         self._start_hotkey_listener()
+
+    # -- settings submenus --
+
+    def _build_model_menu(self) -> rumps.MenuItem:
+        parent = rumps.MenuItem(f"Model: {self._model_name}")
+        for model in AVAILABLE_MODELS:
+            item = rumps.MenuItem(model, callback=self._on_model_select)
+            item.state = model == self._model_name
+            parent[model] = item
+        return parent
+
+    def _build_language_menu(self) -> rumps.MenuItem:
+        display = _LANG_CODE_TO_NAME.get(self._language, self._language)
+        parent = rumps.MenuItem(f"Language: {display}")
+        for name, code in AVAILABLE_LANGUAGES:
+            item = rumps.MenuItem(name, callback=self._on_language_select)
+            item.state = code == self._language
+            parent[name] = item
+        return parent
+
+    def _update_model_checkmarks(self):
+        self._model_menu.title = f"Model: {self._model_name}"
+        for model in AVAILABLE_MODELS:
+            self._model_menu[model].state = model == self._model_name
+
+    def _update_language_checkmarks(self):
+        display = _LANG_CODE_TO_NAME.get(self._language, self._language)
+        self._language_menu.title = f"Language: {display}"
+        for name, code in AVAILABLE_LANGUAGES:
+            self._language_menu[name].state = code == self._language
+
+    def _on_model_select(self, sender):
+        if sender.title == self._model_name:
+            return
+        if self._recording:
+            self._stop_recording()
+        self._engine = None
+        self._model_name = sender.title
+        _save_config({"model_name": self._model_name, "language": self._language})
+        self._update_model_checkmarks()
+        self.status_item.title = f"Status: idle (switched to {self._model_name})"
+
+    def _on_language_select(self, sender):
+        code = dict(AVAILABLE_LANGUAGES).get(sender.title)
+        if code is None or code == self._language:
+            return
+        if self._recording:
+            self._stop_recording()
+        self._engine = None
+        self._language = code
+        _save_config({"model_name": self._model_name, "language": self._language})
+        self._update_language_checkmarks()
+        self.status_item.title = f"Status: idle (switched to {sender.title})"
 
     # -- hotkey --
 
@@ -299,9 +394,7 @@ class VoiceTypeApp(rumps.App):
 
         def on_press(key):
             try:
-                if key in (pynput_keyboard.Key.alt,
-                           pynput_keyboard.Key.alt_l,
-                           pynput_keyboard.Key.alt_r):
+                if key in (pynput_keyboard.Key.alt, pynput_keyboard.Key.alt_l, pynput_keyboard.Key.alt_r):
                     self._opt_pressed = True
                     self._opt_combo = False
                 elif self._opt_pressed:
@@ -312,9 +405,7 @@ class VoiceTypeApp(rumps.App):
 
         def on_release(key):
             try:
-                if key in (pynput_keyboard.Key.alt,
-                           pynput_keyboard.Key.alt_l,
-                           pynput_keyboard.Key.alt_r):
+                if key in (pynput_keyboard.Key.alt, pynput_keyboard.Key.alt_l, pynput_keyboard.Key.alt_r):
                     if self._opt_pressed and not self._opt_combo:
                         self._toggle(None)
                     self._opt_pressed = False
@@ -323,7 +414,8 @@ class VoiceTypeApp(rumps.App):
                 pass
 
         self._hotkey_listener = pynput_keyboard.Listener(
-            on_press=on_press, on_release=on_release,
+            on_press=on_press,
+            on_release=on_release,
         )
         self._hotkey_listener.daemon = True
         self._hotkey_listener.start()
@@ -331,10 +423,11 @@ class VoiceTypeApp(rumps.App):
     # -- toggle --
 
     def _toggle(self, sender):
-        if self._recording:
-            self._stop_recording()
-        else:
-            self._start_recording()
+        with self._toggle_lock:
+            if self._recording:
+                self._stop_recording()
+            else:
+                self._start_recording()
 
     def _start_recording(self):
         if self._recording:
@@ -364,10 +457,8 @@ class VoiceTypeApp(rumps.App):
     @staticmethod
     def _notify(title, subtitle, message):
         """Send macOS notification, silently ignoring failures."""
-        try:
+        with contextlib.suppress(Exception):
             rumps.notification(title, subtitle, message)
-        except Exception:
-            pass
 
     def _load_and_start(self):
         try:
@@ -398,6 +489,11 @@ class VoiceTypeApp(rumps.App):
         self._stop_event.set()
         self._mic.stop()
 
+        # Wait for recognition loop to finish before flushing
+        if self._rec_thread:
+            self._rec_thread.join(timeout=1.0)
+            self._rec_thread = None
+
         # Flush remaining text
         if self._engine:
             final_text = self._engine.finish()
@@ -427,7 +523,7 @@ class VoiceTypeApp(rumps.App):
                 continue
 
             if text:
-                logger.info(f"STT: \"{text}\" (final={is_final})")
+                logger.info(f'STT: "{text}" (final={is_final})')
                 try:
                     if is_final:
                         self._kb.type_final(text)
@@ -454,16 +550,26 @@ class VoiceTypeApp(rumps.App):
 # CLI entry
 # ---------------------------------------------------------------------------
 
+
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="VoiceType – STT to keyboard")
-    parser.add_argument("--model_name", type=str, default="small",
-                        help="Whisper model size (tiny, base, small, medium, large-v3)")
-    parser.add_argument("--lan", type=str, default="ko",
-                        help="Language code (ko, en, ja, zh, auto, ...)")
-    parser.add_argument("--log_level", type=str, default="WARNING",
-                        choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    cfg = _load_config()
+
+    parser = argparse.ArgumentParser(description="VoiceType - STT to keyboard")
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default=cfg.get("model_name", "large-v3-turbo"),
+        help="Whisper model size (tiny, base, small, medium, large-v3, large-v3-turbo)",
+    )
+    parser.add_argument(
+        "--lan",
+        type=str,
+        default=cfg.get("language", "ko"),
+        help="Language code (ko, en, ja, zh, auto, ...)",
+    )
+    parser.add_argument("--log_level", type=str, default="WARNING", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args()
 
     logging.basicConfig(

@@ -6,16 +6,16 @@ This script tests the CoreML encoder functionality and compares
 performance with the MLX encoder.
 """
 
+import argparse
 import sys
 import time
-import argparse
 from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 
 from simul_whisper.coreml_encoder import CoreMLEncoder, check_coreml_availability
 
@@ -55,7 +55,7 @@ def test_encoder_initialization(model_name="base.en"):
         return encoder
     except FileNotFoundError as e:
         print(f"\n❌ Model not found: {e}")
-        print(f"\nTo generate the model, run:")
+        print("\nTo generate the model, run:")
         print(f"  ./scripts/generate_coreml_encoder.sh {model_name}")
         return None
     except Exception as e:
@@ -93,7 +93,7 @@ def test_encoder_inference(encoder, n_runs=5):
 
         elapsed = (t_end - t_start) * 1000  # Convert to ms
         times.append(elapsed)
-        print(f"  Run {i+1}: {elapsed:.2f}ms")
+        print(f"  Run {i + 1}: {elapsed:.2f}ms")
 
     print(f"\nOutput shape: {output.shape}")
     print(f"Output dtype: {output.dtype}")
@@ -126,11 +126,7 @@ def compare_with_mlx(model_name="base.en"):
         # Load MLX model
         print("\nLoading MLX model...")
         model_path = f"mlx-community/whisper-{model_name}-mlx"
-        model = load_models.load_model(
-            path_or_hf_repo=model_path,
-            dtype=mx.float16,
-            model_name=model_name
-        )
+        model = load_models.load_model(path_or_hf_repo=model_path, dtype=mx.float16, model_name=model_name)
         print("✅ MLX model loaded")
 
         # Create test input
@@ -152,7 +148,7 @@ def compare_with_mlx(model_name="base.en"):
 
             elapsed = (t_end - t_start) * 1000
             mlx_times.append(elapsed)
-            print(f"  Run {i+1}: {elapsed:.2f}ms")
+            print(f"  Run {i + 1}: {elapsed:.2f}ms")
 
         mlx_avg = np.mean(mlx_times)
         print(f"\nMLX Average: {mlx_avg:.2f}ms")
@@ -166,26 +162,10 @@ def compare_with_mlx(model_name="base.en"):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Test CoreML encoder integration"
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="base.en",
-        help="Model name (default: base.en)"
-    )
-    parser.add_argument(
-        "--compare",
-        action="store_true",
-        help="Compare with MLX encoder performance"
-    )
-    parser.add_argument(
-        "--runs",
-        type=int,
-        default=5,
-        help="Number of inference runs (default: 5)"
-    )
+    parser = argparse.ArgumentParser(description="Test CoreML encoder integration")
+    parser.add_argument("--model", type=str, default="base.en", help="Model name (default: base.en)")
+    parser.add_argument("--compare", action="store_true", help="Compare with MLX encoder performance")
+    parser.add_argument("--runs", type=int, default=5, help="Number of inference runs (default: 5)")
 
     args = parser.parse_args()
 

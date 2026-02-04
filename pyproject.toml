@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=70.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lightning-simulwhisper"
+version = "0.1.0"
+description = "Real-time local speech-to-text on Apple Silicon using MLX + CoreML"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["whisper", "speech-to-text", "mlx", "coreml", "apple-silicon", "streaming"]
+
+dependencies = [
+    "mlx>=0.11",
+    "numpy",
+    "tqdm",
+    "tiktoken",
+    "huggingface_hub",
+    "onnxruntime",
+    "pyaudio",
+]
+
+[project.optional-dependencies]
+voicetype = [
+    "rumps",
+    "pynput",
+    "pyobjc-framework-Quartz",
+]
+server = [
+    "librosa",
+    "soundfile",
+    "websockets",
+]
+dev = [
+    "ruff>=0.9.0",
+    "pytest>=8.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/altalt-org/Lightning-SimulWhisper"
+Repository = "https://github.com/altalt-org/Lightning-SimulWhisper"
+
+[project.scripts]
+voicetype = "voicetype:main"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = [
+    ".venv",
+    "__pycache__",
+    "simul_whisper/mlx_whisper",
+    "whisper.cpp",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "UP",
+    "SIM",
+    "RUF",
+]
+ignore = [
+    "E501",
+    "B008",
+    "E741",
+    "UP015",
+]
+fixable = ["ALL"]
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*.py" = ["S101"]
+"simul_whisper/*.py" = ["E402", "E701", "F403", "F405", "F811", "F841", "B007", "B904", "B905", "SIM103", "SIM108", "RUF001", "RUF003", "RUF005", "RUF013", "RUF015", "RUF059"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["simul_whisper", "whisper_streaming"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

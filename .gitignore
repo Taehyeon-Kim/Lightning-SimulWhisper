@@ -1,5 +1,59 @@
-mlx_*/
-!mlx_whisper/
+# Python
 __pycache__/
-*.mp3
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Environments
+.venv/
+venv/
+.env
+
+# Testing / Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Ruff
+.ruff_cache/
+
+# mypy
+.mypy_cache/
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+__MACOSX/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Project-specific
+mlx_*/
+!simul_whisper/mlx_whisper/
 whisper.cpp/
+*.mp3
+*.wav
+*.m4a
+logdir/
+silero_model/*.onnx
+
+# CoreML models
+*.mlpackage/
+*.mlmodelc/
+
+# CIF models
+cif_model/

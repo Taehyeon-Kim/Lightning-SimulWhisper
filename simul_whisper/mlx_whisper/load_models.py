@@ -36,8 +36,11 @@ def _extract_model_size(path_or_hf_repo: str, model_name: str) -> str:
     
     # If path_or_hf_repo looks like a simple model name, use it
     # Otherwise fall back to model_name parameter
-    if path_or_hf_repo in ["tiny", "base", "small", "medium", "large", 
-                           "large-v1", "large-v2", "large-v3"]:
+    if path_or_hf_repo in [
+        "tiny", "tiny.en", "base", "base.en", "small", "small.en",
+        "medium", "medium.en", "large", "large-v1", "large-v2",
+        "large-v3", "large-v3-turbo", "turbo",
+    ]:
         return path_or_hf_repo
     
     # Fall back to model_name

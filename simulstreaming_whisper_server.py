@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from simulstreaming_whisper import simulwhisper_args, simul_asr_factory
+from simulstreaming_whisper import simul_asr_factory, simulwhisper_args
 from whisper_streaming.whisper_server import main_server
 
 if __name__ == "__main__":

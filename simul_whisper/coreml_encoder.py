@@ -7,20 +7,24 @@ for faster and more power-efficient audio encoding on Apple Silicon.
 Compatible with whisper.cpp generated CoreML models.
 """
 
-import os
+import logging
 from pathlib import Path
-from typing import Union
+
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     import coremltools as ct
+
     COREML_AVAILABLE = True
 except ImportError:
     COREML_AVAILABLE = False
-    print("Warning: coremltools not available. CoreML encoder will not work.")
+    logger.warning("coremltools not available. CoreML encoder will not work.")
 
 try:
     import mlx.core as mx
+
     MLX_AVAILABLE = True
 except ImportError:
     MLX_AVAILABLE = False
@@ -38,16 +42,9 @@ class CoreMLEncoder:
         compute_units: Which compute units to use ('ALL', 'CPU_AND_NE', 'CPU_ONLY')
     """
 
-    def __init__(
-        self,
-        model_path: Union[str, Path],
-        compute_units: str = "ALL"
-    ):
+    def __init__(self, model_path: str | Path, compute_units: str = "ALL"):
         if not COREML_AVAILABLE:
-            raise RuntimeError(
-                "coremltools is not installed. "
-                "Install with: pip install coremltools"
-            )
+            raise RuntimeError("coremltools is not installed. Install with: pip install coremltools")
 
         self.model_path = Path(model_path)
 
@@ -55,10 +52,10 @@ class CoreMLEncoder:
         # The whisper.cpp script generates .mlpackage which needs to be used
         if not self.model_path.exists():
             # Check if there's a .mlpackage version
-            if str(self.model_path).endswith('.mlmodelc'):
-                mlpackage_path = Path(str(self.model_path).replace('.mlmodelc', '.mlpackage'))
+            if str(self.model_path).endswith(".mlmodelc"):
+                mlpackage_path = Path(str(self.model_path).replace(".mlmodelc", ".mlpackage"))
                 if mlpackage_path.exists():
-                    print(f"Note: Using .mlpackage instead of .mlmodelc")
+                    logger.info("Using .mlpackage instead of .mlmodelc")
                     self.model_path = mlpackage_path
                 else:
                     raise FileNotFoundError(
@@ -67,34 +64,30 @@ class CoreMLEncoder:
                     )
             else:
                 raise FileNotFoundError(
-                    f"CoreML model not found at {model_path}. "
-                    f"Generate it using: ./scripts/generate_coreml_encoder.sh"
+                    f"CoreML model not found at {model_path}. Generate it using: ./scripts/generate_coreml_encoder.sh"
                 )
 
         # If .mlmodelc path was given but .mlpackage exists, prefer .mlpackage
-        if str(self.model_path).endswith('.mlmodelc'):
-            mlpackage_path = Path(str(self.model_path).replace('.mlmodelc', '.mlpackage'))
+        if str(self.model_path).endswith(".mlmodelc"):
+            mlpackage_path = Path(str(self.model_path).replace(".mlmodelc", ".mlpackage"))
             if mlpackage_path.exists():
-                print(f"Note: Found .mlpackage version, using that instead: {mlpackage_path.name}")
+                logger.info(f"Found .mlpackage version, using that instead: {mlpackage_path.name}")
                 self.model_path = mlpackage_path
 
         # Map compute units string to CoreML enum
         compute_units_map = {
             "ALL": ct.ComputeUnit.ALL,
             "CPU_AND_NE": ct.ComputeUnit.CPU_AND_NE,  # CPU and Neural Engine
-            "CPU_ONLY": ct.ComputeUnit.CPU_ONLY
+            "CPU_ONLY": ct.ComputeUnit.CPU_ONLY,
         }
 
         compute_unit = compute_units_map.get(compute_units.upper(), ct.ComputeUnit.ALL)
 
         # Load the CoreML model
-        print(f"Loading CoreML encoder from {self.model_path}")
+        logger.info(f"Loading CoreML encoder from {self.model_path}")
         try:
-            self.model = ct.models.MLModel(
-                str(self.model_path),
-                compute_units=compute_unit
-            )
-            print("CoreML encoder loaded successfully")
+            self.model = ct.models.MLModel(str(self.model_path), compute_units=compute_unit)
+            logger.info("CoreML encoder loaded successfully")
         except Exception as e:
             raise RuntimeError(
                 f"Failed to load CoreML model from {self.model_path}: {e}\n"
@@ -106,7 +99,7 @@ class CoreMLEncoder:
         self.input_name = spec.description.input[0].name
         self.output_name = spec.description.output[0].name
 
-    def __call__(self, mel: Union[mx.array, np.ndarray]) -> mx.array:
+    def __call__(self, mel: mx.array | np.ndarray) -> mx.array:
         """
         Encode mel spectrogram using CoreML.
 
@@ -177,8 +170,8 @@ class CoreMLEncoder:
         # Search for both .mlpackage (preferred) and .mlmodelc formats
         model_patterns = [
             f"coreml-encoder-{model_name}.mlpackage",  # New whisper.cpp format
-            f"ggml-{model_name}-encoder.mlpackage",     # Alternative naming
-            f"ggml-{model_name}-encoder.mlmodelc",      # Fallback to .mlmodelc
+            f"ggml-{model_name}-encoder.mlpackage",  # Alternative naming
+            f"ggml-{model_name}-encoder.mlmodelc",  # Fallback to .mlmodelc
         ]
 
         for directory in all_dirs:
@@ -195,12 +188,7 @@ class CoreMLEncoder:
         )
 
     @classmethod
-    def from_model_name(
-        cls,
-        model_name: str,
-        search_dirs: list = None,
-        compute_units: str = "ALL"
-    ) -> "CoreMLEncoder":
+    def from_model_name(cls, model_name: str, search_dirs: list = None, compute_units: str = "ALL") -> "CoreMLEncoder":
         """
         Create CoreML encoder from model name.
 
@@ -233,15 +221,13 @@ def check_coreml_availability() -> dict:
     if COREML_AVAILABLE:
         try:
             import platform
+
             info["platform"] = platform.system()
             info["machine"] = platform.machine()
             info["coreml_version"] = ct.__version__
 
             # Check if running on Apple Silicon
-            info["is_apple_silicon"] = (
-                platform.system() == "Darwin" and
-                platform.machine() == "arm64"
-            )
+            info["is_apple_silicon"] = platform.system() == "Darwin" and platform.machine() == "arm64"
         except Exception as e:
             info["error"] = str(e)
 
